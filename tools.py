@@ -250,6 +250,7 @@ _COMMANDS_HELP = {
     "board-release": "Bump version, tag, and publish a GitHub Release",
     "board-init": "Initialize GitHub repo with canonical board labels",
     "board": "Show this help screen and workflow overview",
+    "board-onboard": "Show orchestrator onboarding instructions",
 }
 
 
@@ -298,3 +299,53 @@ def board_help(args: dict, **kwargs) -> str:
 def board_help_slash(text: str, **kwargs) -> str:
     """Slash handler for /board — returns formatted help."""
     return board_help({})
+
+
+# --- /board-onboard command (slash-only, no tool schema) ---
+
+_BOARD_ONBOARD_HELP = """
+╔══════════════════════════════════════════════════════════╗
+║   Hermes Board — Orchestrator Onboarding                ║
+╚══════════════════════════════════════════════════════════╝
+
+To start orchestrating:
+
+  /skill hermes-board-orchestrator
+
+This loads the orchestrator skill, which enables the following workflow:
+
+  board-pull → board-status → board-plan → board-run-ready
+
+These correspond to slash commands:
+
+  /board-pull <owner/repo>    — Fetch GitHub Issues → local board
+  /board-status               — Show counts by status
+  /board-plan                 — List ready tasks
+  /board-run-ready [limit]    — Dispatch tasks to coding agents
+
+Available model tiers (for /board-run-ready backend param):
+
+  flash    → worker-flash     (fast, cheap — docs/mechanical tasks)
+  general  → worker-opencode  (balanced — most coding tasks)
+  pro      → worker-pro       (powerful — complex/heavy tasks)
+
+Operating rules:
+
+  • Always start with /board-pull to refresh the board.
+  • Check /board-status before planning.
+  • Use /board-plan to review what's ready.
+  • Dispatch with /board-run-ready — limit concurrency to 2.
+  • Update task statuses with /board-update-status.
+  • /board shows full command reference.
+"""
+
+
+def board_onboard(args: dict, **kwargs) -> str:
+    """Return formatted orchestrator onboarding instructions."""
+    return json.dumps({"help": _BOARD_ONBOARD_HELP.strip()})
+
+
+def board_onboard_slash(text: str, **kwargs) -> str:
+    """Slash handler for /board-onboard."""
+    return board_onboard({})
+

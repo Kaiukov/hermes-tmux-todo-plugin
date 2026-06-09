@@ -38,6 +38,7 @@ def register(ctx):
         ("board-create-issue", tools.board_create_issue_slash),
         ("board-release", tools.board_release_slash),
         ("board-init", tools.board_init_slash),
+        ("board-onboard", tools.board_onboard_slash),
     ]:
         ctx.register_command(name=name, handler=handler)
 
