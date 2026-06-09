@@ -14,6 +14,11 @@ _PLUGIN_DIR = Path(__file__).parent
 _BIN = _PLUGIN_DIR / "bin"
 
 
+def _json(obj: dict) -> str:
+    """json.dumps with ensure_ascii=False so box-drawing chars render correctly."""
+    return json.dumps(obj, ensure_ascii=False)
+
+
 def _run_bin(script: str, *args: str) -> dict:
     """Run a vendored bin/ script and return parsed JSON stdout, or error dict."""
     script_path = _BIN / script
@@ -52,19 +57,19 @@ def board_pull(args: dict, **kwargs) -> str:
         cmd_args += ["--assignee", assignee]
 
     result = _run_bin("board-pull", *cmd_args)
-    return json.dumps(result)
+    return _json(result)
 
 
 def board_status(args: dict, **kwargs) -> str:
     """Compact board summary — counts only."""
     result = _run_bin("board-status")
-    return json.dumps(result)
+    return _json(result)
 
 
 def board_plan(args: dict, **kwargs) -> str:
     """Return ready tasks in compact format."""
     result = _run_bin("board-next", "--all-ready")
-    return json.dumps(result)
+    return _json(result)
 
 
 def board_run_ready(args: dict, **kwargs) -> str:
@@ -74,7 +79,7 @@ def board_run_ready(args: dict, **kwargs) -> str:
     issue_numbers = args.get("issue_numbers", [])
 
     # TODO: implement tmux dispatch via runtime/tmux.py
-    return json.dumps({
+    return _json({
         "dispatched": [],
         "note": "tmux dispatch not yet implemented — see runtime/tmux.py",
         "limit": limit,
@@ -87,7 +92,7 @@ def board_update_status(args: dict, **kwargs) -> str:
     issue = args.get("issue", 0)
     status = args.get("status", "")
     result = _run_bin("board-sync", "--issue", str(issue), "--status", status)
-    return json.dumps(result)
+    return _json(result)
 
 
 def board_add_task(args: dict, **kwargs) -> str:
@@ -96,7 +101,7 @@ def board_add_task(args: dict, **kwargs) -> str:
     body = args.get("body", "")
     status = args.get("status", "ready")
     result = _run_bin("board-add", "--title", title, "--body", body, "--status", status)
-    return json.dumps(result)
+    return _json(result)
 
 
 def board_release(args: dict, **kwargs) -> str:
@@ -112,7 +117,7 @@ def board_release(args: dict, **kwargs) -> str:
         cmd_args += ["--notes", notes]
 
     result = _run_bin("board-release", *cmd_args)
-    return json.dumps(result)
+    return _json(result)
 
 
 def board_init(args: dict, **kwargs) -> str:
@@ -122,7 +127,7 @@ def board_init(args: dict, **kwargs) -> str:
     if repo:
         cmd_args = ["--repo", repo]
     result = _run_bin("board-init", *cmd_args)
-    return json.dumps(result)
+    return _json(result)
 
 
 # --- Slash command handlers (called via /board-*) ---
@@ -146,7 +151,7 @@ def board_update_status_slash(text: str, **kwargs) -> str:
     parts = text.strip().split()
     if len(parts) >= 2:
         return board_update_status({"issue": int(parts[0]), "status": parts[1]})
-    return json.dumps({"error": "usage: /board-update-status <issue> <status>"})
+    return _json({"error": "usage: /board-update-status <issue> <status>"})
 
 def board_add_task_slash(text: str, **kwargs) -> str:
     return board_add_task({"title": text.strip()})
@@ -162,11 +167,11 @@ def board_release_slash(text: str, **kwargs) -> str:
     """Parse /board-release args: bump type, optional --draft, optional notes."""
     parts = text.strip().split()
     if not parts:
-        return json.dumps({"error": "usage: /board-release <patch|minor|major> [--draft] [<notes>]"})
+        return _json({"error": "usage: /board-release <patch|minor|major> [--draft] [<notes>]"})
 
     bump = parts[0].lower()
     if bump not in ("patch", "minor", "major"):
-        return json.dumps({"error": f"invalid bump type '{bump}'. Use patch, minor, or major."})
+        return _json({"error": f"invalid bump type '{bump}'. Use patch, minor, or major."})
 
     args = {"bump": bump}
     remaining = parts[1:]
@@ -202,11 +207,11 @@ def board_create_issue(args: dict, **kwargs) -> str:
     """Create a GitHub issue via `gh issue create`."""
     title = args.get("title", "").strip()
     if not title:
-        return json.dumps({"error": "title is required"})
+        return _json({"error": "title is required"})
 
     repo = args.get("repo", "") or _get_default_repo()
     if not repo:
-        return json.dumps({"error": "no repo specified and BOARD_REPO / .tasks/config.json not set"})
+        return _json({"error": "no repo specified and BOARD_REPO / .tasks/config.json not set"})
 
     labels = args.get("labels", "inbox")
     body = args.get("body", "")
@@ -220,7 +225,7 @@ def board_create_issue(args: dict, **kwargs) -> str:
             cmd, capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
-            return json.dumps({"error": result.stderr.strip() or f"exit code {result.returncode}"})
+            return _json({"error": result.stderr.strip() or f"exit code {result.returncode}"})
         url = result.stdout.strip()
         # gh outputs: https://github.com/owner/repo/issues/123
         number = url.rstrip("/").rsplit("/", 1)[-1] if url else ""
@@ -228,13 +233,13 @@ def board_create_issue(args: dict, **kwargs) -> str:
             number = int(number)
         except (ValueError, TypeError):
             number = 0
-        return json.dumps({"number": number, "url": url})
+        return _json({"number": number, "url": url})
     except subprocess.TimeoutExpired:
-        return json.dumps({"error": "timeout after 120s"})
+        return _json({"error": "timeout after 120s"})
     except FileNotFoundError:
-        return json.dumps({"error": "gh CLI not found — install GitHub CLI (gh)"})
+        return _json({"error": "gh CLI not found — install GitHub CLI (gh)"})
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _json({"error": str(e)})
 
 
 def board_create_issue_slash(text: str, **kwargs) -> str:
@@ -298,7 +303,7 @@ def board_help(args: dict, **kwargs) -> str:
         '  /board-init                   — init repo with canonical labels',
     ])
 
-    return json.dumps({"help": "\n".join(lines)})
+    return _json({"help": "\n".join(lines)})
 
 
 def board_help_slash(text: str, **kwargs) -> str:
@@ -346,7 +351,7 @@ START: run /board-pull <owner/repo> to fetch the board, then /board-status."""
 
 def board_onboard(args: dict, **kwargs) -> str:
     """Return formatted orchestrator onboarding instructions."""
-    return json.dumps({"help": _BOARD_ONBOARD_HELP.strip()})
+    return _json({"help": _BOARD_ONBOARD_HELP.strip()})
 
 
 def board_onboard_slash(text: str, **kwargs) -> str:
