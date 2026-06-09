@@ -261,35 +261,52 @@ def board_create_issue(args: dict, **kwargs) -> str:
 
 
 def board_create_issue_slash(text: str, **kwargs) -> str:
-    """Delegate raw text to deepseek-v4-flash worker: parse, format, create GitHub issue.
-
-    Returns instructions for the ORCHESTRATOR to create a kanban task.
-    The orchestrator agent should read this output and call kanban_create().
-    """
+    """Create a kanban task for deepseek-v4-flash to process raw text into a GitHub issue."""
     raw = text.strip()
     if not raw:
         return _json({"error": "empty text — paste the issue description after /board-create-issue"})
 
-    # Detect repo
     repo = _get_default_repo()
     if not repo:
         return _json({"error": "no repo detected — run inside a git repo or set BOARD_REPO"})
 
-    return _json({
-        "action": "create_kanban_task",
-        "assignee": "deepseek-v4-flash",
-        "workspace": "scratch",
-        "title": "Create GitHub issue from raw text",
-        "body": f"Repo: {repo}\n\n"
-                f"Read the raw text below and create a well-formatted GitHub issue:\n"
-                f"1. Extract a concise title (first line or main topic)\n"
-                f"2. Format the body with proper markdown\n"
-                f"3. Run: gh issue create --repo {repo} --title \"...\" --body \"...\" --label inbox\n"
-                f"4. Return: {{\"number\": N, \"url\": \"...\"}}\n\n"
-                f"RAW TEXT:\n```\n{raw}\n```\n\n"
-                f"Write result to WORKSPACE/issue-result.json. End with DONE.",
-        "raw_text_length": len(raw),
-    })
+    # Build task body
+    task_body = (
+        f"Repo: {repo}\n\n"
+        f"Read the raw text below and create a well-formatted GitHub issue:\n"
+        f"1. Extract a concise title (first line or main topic)\n"
+        f"2. Format the body with proper markdown\n"
+        f"3. Run: gh issue create --repo {repo} --title \"...\" --body \"...\" --label inbox\n"
+        f"4. Return: {{\"number\": N, \"url\": \"...\"}}\n\n"
+        f"RAW TEXT:\n```\n{raw}\n```\n\n"
+        f"Write result to WORKSPACE/issue-result.json. End with DONE."
+    )
+
+    try:
+        result = subprocess.run(
+            ["hermes", "kanban", "create",
+             "Create GitHub issue from raw text",
+             "--body", task_body,
+             "--assignee", "deepseek-v4-flash",
+             "--workspace", "scratch",
+             "--json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return _json({"error": f"kanban create failed: {result.stderr.strip()}"})
+        data = json.loads(result.stdout)
+        return _json({
+            "task_id": data.get("id", ""),
+            "assignee": "deepseek-v4-flash",
+            "status": data.get("status", "ready"),
+            "raw_text_length": len(raw),
+        })
+    except FileNotFoundError:
+        return _json({"error": "hermes CLI not found"})
+    except subprocess.TimeoutExpired:
+        return _json({"error": "kanban create timed out"})
+    except Exception as e:
+        return _json({"error": str(e)})
 
 
 # --- /board help command (slash-only, no tool schema) ---
