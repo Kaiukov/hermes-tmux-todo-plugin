@@ -46,7 +46,7 @@ def _run_bin(script: str, *args: str) -> dict:
 
 def board_pull(args: dict, **kwargs) -> str:
     """Fetch GitHub Issues → .tasks/issues.json → board.json + TODO.md."""
-    repo = args.get("repo", "")
+    repo = args.get("repo", "") or _get_default_repo()
     labels = args.get("labels", "")
     assignee = args.get("assignee", "")
 
@@ -122,7 +122,7 @@ def board_release(args: dict, **kwargs) -> str:
 
 def board_init(args: dict, **kwargs) -> str:
     """Initialize GitHub repo with canonical board labels."""
-    repo = args.get("repo", "")
+    repo = args.get("repo", "") or _get_default_repo()
     cmd_args = []
     if repo:
         cmd_args = ["--repo", repo]
@@ -187,7 +187,7 @@ def board_release_slash(text: str, **kwargs) -> str:
 
 
 def _get_default_repo() -> str:
-    """Resolve default repo from BOARD_REPO env or .tasks/config.json."""
+    """Resolve default repo from BOARD_REPO env, .tasks/config.json, or git remote."""
     env_repo = os.environ.get("BOARD_REPO")
     if env_repo:
         return env_repo
@@ -200,6 +200,24 @@ def _get_default_repo() -> str:
                 return repo
         except (json.JSONDecodeError, IOError):
             pass
+    # Fallback: auto-detect from git remote
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5,
+            cwd=Path.cwd(),
+        )
+        if result.returncode == 0:
+            url = result.stdout.strip()
+            # Extract owner/repo from GitHub URL
+            # https://github.com/owner/repo.git → owner/repo
+            # git@github.com:owner/repo.git → owner/repo
+            import re
+            m = re.search(r'github\.com[:/](.+?)/(.+?)(?:\.git)?$', url)
+            if m:
+                return f"{m.group(1)}/{m.group(2)}"
+    except Exception:
+        pass
     return ""
 
 
