@@ -303,41 +303,40 @@ def board_help_slash(text: str, **kwargs) -> str:
 
 # --- /board-onboard command (slash-only, no tool schema) ---
 
-_BOARD_ONBOARD_HELP = """
+_BOARD_ONBOARD_HELP = """\
 ╔══════════════════════════════════════════════════════════╗
-║   Hermes Board — Orchestrator Onboarding                ║
+║   Hermes Board — ORCHESTRATOR MODE ACTIVATED             ║
 ╚══════════════════════════════════════════════════════════╝
 
-To start orchestrating:
+You are now the ORCHESTRATOR. Load the hermes-board-orchestrator skill
+and follow these rules immediately:
 
-  /skill hermes-board-orchestrator
+WORKFLOW: board-pull → board-status → board-plan → board-run-ready
 
-This loads the orchestrator skill, which enables the following workflow:
+RULES:
+  • Do NOT implement code yourself — delegate EVERYTHING to workers.
+  • Use kanban_create() with --assignee=<model-name> for each task.
+  • Max 2 workers in flight (kanban.max_in_progress_per_profile=2).
+  • Hard gate: independently verify every worker output — never trust self-report.
+  • Review pipeline: implement → review → orchestrator-verify.
+  • Dispatch specs in worker workspace, never /tmp.
 
-  board-pull → board-status → board-plan → board-run-ready
+MODEL TIERS (use as --assignee):
+  deepseek-v4-flash  — general work (opencode-go)
+  deepseek-v4-pro    — complex implementation (opencode-go)
 
-These correspond to slash commands:
+SLASH COMMANDS:
+  /board-pull <repo>     — fetch issues from GitHub
+  /board-status          — compact counts
+  /board-plan            — list ready tasks
+  /board-run-ready [N]   — dispatch N tasks to workers
+  /board-update-status   — change status + sync labels
+  /board-create-issue    — create GitHub issue
+  /board-release         — bump version + tag + release
+  /board-init            — init repo with canonical labels
+  /board                 — full command reference
 
-  /board-pull <owner/repo>    — Fetch GitHub Issues → local board
-  /board-status               — Show counts by status
-  /board-plan                 — List ready tasks
-  /board-run-ready [limit]    — Dispatch tasks to coding agents
-
-Available model tiers (for /board-run-ready backend param):
-
-  flash    → worker-flash     (fast, cheap — docs/mechanical tasks)
-  general  → worker-opencode  (balanced — most coding tasks)
-  pro      → worker-pro       (powerful — complex/heavy tasks)
-
-Operating rules:
-
-  • Always start with /board-pull to refresh the board.
-  • Check /board-status before planning.
-  • Use /board-plan to review what's ready.
-  • Dispatch with /board-run-ready — limit concurrency to 2.
-  • Update task statuses with /board-update-status.
-  • /board shows full command reference.
-"""
+START: run /board-pull <owner/repo> to fetch the board, then /board-status."""
 
 
 def board_onboard(args: dict, **kwargs) -> str:
