@@ -1,0 +1,13 @@
+name: hermes-tmux-todo-board
+version: 0.1.0
+description: GitHub Issues task board orchestrator for tmux-based coding agents (OpenCode, Codex, Claude)
+author: Kaiukov
+provides_tools:
+  - board_pull
+  - board_status
+  - board_plan
+  - board_run_ready
+  - board_update_status
+  - board_add_task
+provides_hooks:
+  - post_tool_call
