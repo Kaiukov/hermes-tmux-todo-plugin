@@ -261,22 +261,45 @@ def board_create_issue(args: dict, **kwargs) -> str:
 
 
 def board_create_issue_slash(text: str, **kwargs) -> str:
-    """Parse --repo flag and title from slash text, then create a GitHub issue."""
-    parts = text.strip().split()
+    """Parse raw text: first line → title, rest → body. Supports --repo flag."""
+    raw = text.strip()
+    # Parse --repo flag
     repo = ""
-    title_parts = []
-    i = 0
-    while i < len(parts):
-        if parts[i] == "--repo" and i + 1 < len(parts):
-            repo = parts[i + 1]
-            i += 2
-        else:
-            title_parts.append(parts[i])
-            i += 1
-    title = " ".join(title_parts)
+    if raw.startswith("--repo"):
+        parts = raw.split(None, 2)
+        if len(parts) >= 2:
+            repo = parts[1]
+            raw = parts[2] if len(parts) > 2 else ""
+
+    # Split into lines, strip markdown code fences
+    lines = raw.split("\n")
+    # Remove leading/trailing ``` fences
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+
+    # First non-empty line = title
+    title = ""
+    body_lines = []
+    found_title = False
+    for line in lines:
+        stripped = line.strip()
+        if not found_title and stripped:
+            title = stripped
+            found_title = True
+        elif found_title:
+            body_lines.append(line)
+
+    if not title:
+        return _json({"error": "no title found in text"})
+
     args = {"title": title}
     if repo:
         args["repo"] = repo
+    if body_lines:
+        args["body"] = "\n".join(body_lines).strip()
+
     return board_create_issue(args)
 
 
