@@ -22,7 +22,7 @@ def register(ctx):
         (schemas.BOARD_UPDATE_STATUS, tools.board_update_status),
         (schemas.BOARD_ADD_TASK, tools.board_add_task),
     ]:
-        ctx.register_tool(name=schema["name"], schema=schema, handler=handler)
+        ctx.register_tool(name=schema["name"], toolset="board", schema=schema, handler=handler)
 
     # --- Slash commands ---
     for name, handler in [
