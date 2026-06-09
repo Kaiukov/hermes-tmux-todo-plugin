@@ -243,8 +243,23 @@ def board_create_issue(args: dict, **kwargs) -> str:
 
 
 def board_create_issue_slash(text: str, **kwargs) -> str:
-    """Parse title from slash text and create a GitHub issue."""
-    return board_create_issue({"title": text.strip()})
+    """Parse --repo flag and title from slash text, then create a GitHub issue."""
+    parts = text.strip().split()
+    repo = ""
+    title_parts = []
+    i = 0
+    while i < len(parts):
+        if parts[i] == "--repo" and i + 1 < len(parts):
+            repo = parts[i + 1]
+            i += 2
+        else:
+            title_parts.append(parts[i])
+            i += 1
+    title = " ".join(title_parts)
+    args = {"title": title}
+    if repo:
+        args["repo"] = repo
+    return board_create_issue(args)
 
 
 # --- /board help command (slash-only, no tool schema) ---
