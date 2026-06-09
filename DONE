@@ -1,0 +1,4 @@
+DONE
+
+- Added `_verify_syntax.py` to .gitignore (as internal check helper)
+- `runtime/DONE` was already in .gitignore
