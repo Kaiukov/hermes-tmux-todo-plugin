@@ -27,11 +27,12 @@ def _run_bin(script: str, *args: str) -> dict:
         )
         if result.returncode != 0:
             return {"error": result.stderr.strip() or f"exit code {result.returncode}"}
-        # Try JSON, fall back to plain text
+        # Try JSON from stdout, fall back to combined stdout+stderr text
+        output = (result.stdout + result.stderr).strip()
         try:
-            return json.loads(result.stdout)
+            return json.loads(result.stdout or result.stderr)
         except json.JSONDecodeError:
-            return {"output": result.stdout.strip()}
+            return {"output": output} if output else {"output": "ok (no output)"}
     except subprocess.TimeoutExpired:
         return {"error": "timeout after 120s"}
     except Exception as e:
