@@ -5,7 +5,6 @@ Bridges GitHub Issues into a local .tasks/board.json + TODO.md,
 then dispatches ready tasks to tmux-based coding agents (OpenCode, Codex, Claude).
 """
 from pathlib import Path
-from hermes_tools import terminal
 
 _PLUGIN_DIR = Path(__file__).parent
 
