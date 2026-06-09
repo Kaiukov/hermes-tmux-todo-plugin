@@ -9,5 +9,6 @@ provides_tools:
   - board_run_ready
   - board_update_status
   - board_add_task
+  - board_init
 provides_hooks:
   - post_tool_call

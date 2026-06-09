@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: board-init [--repo OWNER/REPO]
+
+Initialize a GitHub repository with canonical board labels.
+
+Creates the standard board workflow labels on a GitHub repo using 'gh label create'.
+Skips labels that already exist (idempotent).
+
+Canonical labels:
+  inbox, ready, in-progress, needs-review, blocked, needs-info, done
+
+Arguments:
+  --repo OWNER/REPO    Repository (or set BOARD_REPO env var).
+  --help, -h           Show this help message.
+
+The repo is read from --repo flag, BOARD_REPO env var,
+or .tasks/config.json (board_repo key), in that priority order.
+EOF
+  exit 0
+}
+
+# Canonical board labels with descriptions and colors
+LABELS_SPEC=(
+  "inbox:Inbox:ffffff"
+  "ready:Ready:0e8a16"
+  "in-progress:In Progress:fbca04"
+  "needs-review:Needs Review:5319e7"
+  "blocked:Blocked:b60205"
+  "needs-info:Needs Info:bfdadc"
+  "done:Done:bfe5bf"
+)
+
+# Parse args
+REPO="${BOARD_REPO:-}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo) REPO="$2"; shift 2 ;;
+    --help|-h) usage ;;
+    *) echo "Unknown flag: $1"; usage ;;
+  esac
+done
+
+# If no repo from --flag or env, try .tasks/config.json
+if [[ -z "$REPO" ]]; then
+  if [[ -f ".tasks/config.json" ]]; then
+    REPO="$(jq -r '.board_repo // empty' .tasks/config.json 2>/dev/null || true)"
+  fi
+fi
+
+if [[ -z "$REPO" ]]; then
+  echo "ERROR: --repo or BOARD_REPO or .tasks/config.json board_repo is required." >&2
+  exit 1
+fi
+
+echo "board-init: initializing labels for $REPO" >&2
+
+created=0
+skipped=0
+errors=0
+
+for entry in "${LABELS_SPEC[@]}"; do
+  IFS=':' read -r name desc color <<< "$entry"
+
+  # Check if label already exists
+  if gh label view "$name" --repo "$REPO" &>/dev/null 2>&1; then
+    echo "  ~ $name (already exists, updating color/description)" >&2
+    gh label edit "$name" \
+      --repo "$REPO" \
+      --name "$name" \
+      --description "$desc" \
+      --color "$color" \
+      2>/dev/null || {
+        echo "  ! $name (update failed)" >&2
+        errors=$((errors + 1))
+      }
+    skipped=$((skipped + 1))
+  else
+    gh label create "$name" \
+      --repo "$REPO" \
+      --description "$desc" \
+      --color "$color" \
+      2>/dev/null || {
+        echo "  ! $name (create failed)" >&2
+        errors=$((errors + 1))
+        continue
+      }
+    echo "  + $name ($desc)" >&2
+    created=$((created + 1))
+  fi
+done
+
+echo "board-init: done — $created created, $skipped existed, $errors errors" >&2
+
+# Output JSON summary
+jq -n \
+  --arg repo "$REPO" \
+  --argjson created "$created" \
+  --argjson skipped "$skipped" \
+  --argjson errors "$errors" \
+  '{repo: $repo, labels_created: $created, labels_skipped: $skipped, errors: $errors}'

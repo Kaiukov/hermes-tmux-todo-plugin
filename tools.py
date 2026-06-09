@@ -5,6 +5,7 @@ All handlers receive args (dict) and return JSON strings.
 Vendored board scripts live in bin/ and are called via subprocess.
 """
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,6 +98,29 @@ def board_add_task(args: dict, **kwargs) -> str:
     return json.dumps(result)
 
 
+def board_release(args: dict, **kwargs) -> str:
+    """Bump version, tag, and create GitHub Release."""
+    bump = args.get("bump", "patch")
+    draft = args.get("draft", False)
+    notes = args.get("notes", "")
+
+    cmd_args = ["--bump", bump]
+    if draft:
+        cmd_args.append("--draft")
+    if notes:
+        cmd_args += ["--notes", notes]
+
+    result = _run_bin("board-release", *cmd_args)
+    return json.dumps(result)
+
+
+def board_init(args: dict, **kwargs) -> str:
+    """Initialize GitHub repo with canonical board labels."""
+    # repo is read from env/config by the bin script
+    result = _run_bin("board-init")
+    return json.dumps(result)
+
+
 # --- Slash command handlers (called via /board-*) ---
 # These parse the slash command text and call the corresponding tool handler.
 
@@ -122,3 +146,155 @@ def board_update_status_slash(text: str, **kwargs) -> str:
 
 def board_add_task_slash(text: str, **kwargs) -> str:
     return board_add_task({"title": text.strip()})
+
+
+def board_init_slash(text: str, **kwargs) -> str:
+    """Initialize GitHub repo with canonical board labels (reads repo from config/env)."""
+    return board_init({})
+
+
+def board_release_slash(text: str, **kwargs) -> str:
+    """Parse /board-release args: bump type, optional --draft, optional notes."""
+    parts = text.strip().split()
+    if not parts:
+        return json.dumps({"error": "usage: /board-release <patch|minor|major> [--draft] [<notes>]"})
+
+    bump = parts[0].lower()
+    if bump not in ("patch", "minor", "major"):
+        return json.dumps({"error": f"invalid bump type '{bump}'. Use patch, minor, or major."})
+
+    args = {"bump": bump}
+    remaining = parts[1:]
+
+    if "--draft" in remaining:
+        args["draft"] = True
+        remaining.remove("--draft")
+
+    if remaining:
+        args["notes"] = " ".join(remaining)
+
+    return board_release(args)
+
+
+def _get_default_repo() -> str:
+    """Resolve default repo from BOARD_REPO env or .tasks/config.json."""
+    env_repo = os.environ.get("BOARD_REPO")
+    if env_repo:
+        return env_repo
+    config_path = Path.cwd() / ".tasks" / "config.json"
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+            repo = config.get("repo", "")
+            if repo:
+                return repo
+        except (json.JSONDecodeError, IOError):
+            pass
+    return ""
+
+
+def board_create_issue(args: dict, **kwargs) -> str:
+    """Create a GitHub issue via `gh issue create`."""
+    title = args.get("title", "").strip()
+    if not title:
+        return json.dumps({"error": "title is required"})
+
+    repo = args.get("repo", "") or _get_default_repo()
+    if not repo:
+        return json.dumps({"error": "no repo specified and BOARD_REPO / .tasks/config.json not set"})
+
+    labels = args.get("labels", "inbox")
+    body = args.get("body", "")
+
+    cmd = ["gh", "issue", "create", "--repo", repo, "--title", title, "--label", labels]
+    if body:
+        cmd += ["--body", body]
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            return json.dumps({"error": result.stderr.strip() or f"exit code {result.returncode}"})
+        url = result.stdout.strip()
+        # gh outputs: https://github.com/owner/repo/issues/123
+        number = url.rstrip("/").rsplit("/", 1)[-1] if url else ""
+        try:
+            number = int(number)
+        except (ValueError, TypeError):
+            number = 0
+        return json.dumps({"number": number, "url": url})
+    except subprocess.TimeoutExpired:
+        return json.dumps({"error": "timeout after 120s"})
+    except FileNotFoundError:
+        return json.dumps({"error": "gh CLI not found — install GitHub CLI (gh)"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def board_create_issue_slash(text: str, **kwargs) -> str:
+    """Parse title from slash text and create a GitHub issue."""
+    return board_create_issue({"title": text.strip()})
+
+
+# --- /board help command (slash-only, no tool schema) ---
+
+_COMMANDS_HELP = {
+    "board-pull": "Fetch GitHub Issues for a repo and render the local task board",
+    "board-status": "Show compact board summary — counts by status",
+    "board-plan": "List ready tasks available for dispatch",
+    "board-run-ready": "Dispatch ready tasks to tmux-based coding agents",
+    "board-update-status": "Update a task's status locally and sync to GitHub labels",
+    "board-add-task": "Add a local-only task (not a GitHub issue)",
+    "board-create-issue": "Create a GitHub issue from a description",
+    "board-release": "Bump version, tag, and publish a GitHub Release",
+    "board-init": "Initialize GitHub repo with canonical board labels",
+    "board": "Show this help screen and workflow overview",
+}
+
+
+def board_help(args: dict, **kwargs) -> str:
+    """Return formatted help text with workflow overview and available commands."""
+    lines = [
+        "╔══════════════════════════════════════════╗",
+        "║   Hermes Tmux TODO Board — Help         ║",
+        "╚══════════════════════════════════════════╝",
+        "",
+        "Workflow:",
+        "  board-pull → board-status → board-plan → board-run-ready",
+        "",
+        "  1. board-pull       — fetch issues from GitHub, build local board",
+        "  2. board-status     — see what's available (counts by status)",
+        "  3. board-plan       — pick which ready tasks to dispatch",
+        "  4. board-run-ready  — send tasks to tmux coding agents",
+        "",
+        "Available commands:",
+    ]
+
+    for name, desc in _COMMANDS_HELP.items():
+        lines.append(f"  /{name:<20} {desc}")
+
+    lines.extend([
+        "",
+        "Documentation:",
+        "  docs/hermes-plugin.md  — full plugin documentation",
+        "",
+        "Usage:",
+        "  /board                       — show this help",
+        '  /board-pull <owner/repo>     — fetch issues from a repo',
+        "  /board-status                — quick board snapshot",
+        "  /board-plan                  — list ready tasks",
+        '  /board-run-ready [limit]     — dispatch N tasks (default 2)',
+        '  /board-update-status <n> <s> — set issue N to status s',
+        '  /board-add-task <title>      — add a local todo',
+        '  /board-create-issue <title>  — create a GitHub issue',
+        '  /board-release <bump> [--draft] [notes] — cut a new release',
+        '  /board-init                   — init repo with canonical labels',
+    ])
+
+    return json.dumps({"help": "\n".join(lines)})
+
+
+def board_help_slash(text: str, **kwargs) -> str:
+    """Slash handler for /board — returns formatted help."""
+    return board_help({})

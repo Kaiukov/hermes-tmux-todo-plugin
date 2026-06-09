@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLUGIN_YAML="plugin.yaml"
+VALID_BUMPS=("patch" "minor" "major")
+
+usage() {
+  cat <<EOF
+Usage: board-release --bump <patch|minor|major> [--draft] [--notes <text>]
+
+Bump version in ${PLUGIN_YAML}, create git tag, and publish GitHub Release.
+
+Options:
+  --bump TYPE   Version bump type (required). Valid: ${VALID_BUMPS[*]}
+  --draft       Create release as draft (default: published).
+  --notes TEXT  Release notes text. If omitted, uses a basic auto-generated note.
+  --help, -h    Show this help message.
+EOF
+  exit 0
+}
+
+# --- Parse args ---
+BUMP=""
+DRAFT=""
+NOTES=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --bump) BUMP="$2"; shift 2 ;;
+    --draft) DRAFT="--draft"; shift ;;
+    --notes) NOTES="$2"; shift 2 ;;
+    --help|-h) usage ;;
+    *) echo "ERROR: Unknown flag: $1" >&2; usage ;;
+  esac
+done
+
+if [[ -z "$BUMP" ]]; then
+  echo "ERROR: --bump is required." >&2
+  usage
+fi
+
+# Validate bump type
+valid=0
+for b in "${VALID_BUMPS[@]}"; do
+  if [[ "$BUMP" == "$b" ]]; then
+    valid=1
+    break
+  fi
+done
+if [[ $valid -eq 0 ]]; then
+  echo "ERROR: invalid bump type '$BUMP'. Valid: ${VALID_BUMPS[*]}" >&2
+  exit 1
+fi
+
+# Check prerequisites
+if ! command -v gh &>/dev/null; then
+  echo "ERROR: gh (GitHub CLI) is not installed or not on PATH." >&2
+  exit 1
+fi
+
+if ! git rev-parse --git-dir &>/dev/null; then
+  echo "ERROR: not inside a git repository." >&2
+  exit 1
+fi
+
+# Ensure working tree is clean
+if ! git diff --quiet; then
+  echo "ERROR: working tree has uncommitted changes. Commit or stash first." >&2
+  exit 1
+fi
+
+# Read current version from plugin.yaml
+if [[ ! -f "$PLUGIN_YAML" ]]; then
+  echo "ERROR: ${PLUGIN_YAML} not found." >&2
+  exit 1
+fi
+
+CURRENT_VERSION=$(grep -E '^version:[[:space:]]+' "$PLUGIN_YAML" | sed 's/^version:[[:space:]]*//')
+if [[ -z "$CURRENT_VERSION" ]]; then
+  echo "ERROR: could not parse version from ${PLUGIN_YAML}" >&2
+  exit 1
+fi
+
+echo "Current version: ${CURRENT_VERSION}" >&2
+
+# --- Semver bump ---
+# Split on dots
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+# Strip leading zeros (in case they exist)
+MAJOR=$((10#$MAJOR))
+MINOR=$((10#$MINOR))
+PATCH=$((10#$PATCH))
+
+case "$BUMP" in
+  patch)
+    PATCH=$((PATCH + 1))
+    ;;
+  minor)
+    MINOR=$((MINOR + 1))
+    PATCH=0
+    ;;
+  major)
+    MAJOR=$((MAJOR + 1))
+    MINOR=0
+    PATCH=0
+    ;;
+esac
+
+NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+echo "New version: ${NEW_VERSION}" >&2
+
+# --- Update plugin.yaml ---
+# Use sed to replace the version line
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  sed -i '' "s/^version:.*/version: ${NEW_VERSION}/" "$PLUGIN_YAML"
+else
+  sed -i "s/^version:.*/version: ${NEW_VERSION}/" "$PLUGIN_YAML"
+fi
+
+echo "Updated ${PLUGIN_YAML} to version ${NEW_VERSION}" >&2
+
+# --- Generate release notes ---
+if [[ -z "$NOTES" ]]; then
+  # Auto-generated notes: list commits since last tag
+  LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+  if [[ -n "$LAST_TAG" ]]; then
+    NOTES=$(git log --oneline "${LAST_TAG}..HEAD" 2>/dev/null || echo "Initial release")
+  else
+    NOTES="Release v${NEW_VERSION}"
+  fi
+fi
+
+# --- Git commit ---
+git add "$PLUGIN_YAML"
+git commit -m "release: v${NEW_VERSION}"
+echo "Committed version bump" >&2
+
+# --- Git tag ---
+git tag -a "v${NEW_VERSION}" -m "v${NEW_VERSION}"
+echo "Created tag v${NEW_VERSION}" >&2
+
+# --- Push ---
+git push origin main --tags
+echo "Pushed commit + tag" >&2
+
+# --- GitHub Release ---
+if [[ -n "$DRAFT" ]]; then
+  gh release create "v${NEW_VERSION}" \
+    --title "v${NEW_VERSION}" \
+    --notes "${NOTES}" \
+    --draft
+  echo "Created draft GitHub Release v${NEW_VERSION}" >&2
+else
+  gh release create "v${NEW_VERSION}" \
+    --title "v${NEW_VERSION}" \
+    --notes "${NOTES}"
+  echo "Created published GitHub Release v${NEW_VERSION}" >&2
+fi
+
+# --- Output JSON ---
+cat <<JSONEOF
+{"version":"${NEW_VERSION}","tag":"v${NEW_VERSION}","bump":"${BUMP}","draft":${DRAFT:+true}${DRAFT:-false}}
+JSONEOF

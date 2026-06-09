@@ -2,5 +2,6 @@ __pycache__/
 runtime/DONE
 # internal check/verify helper
 _verify_syntax.py
+_verify_board_release.py
 DONE
 runtime/DONE

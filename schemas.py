@@ -102,6 +102,33 @@ BOARD_UPDATE_STATUS = {
     },
 }
 
+BOARD_RELEASE = {
+    "name": "board_release",
+    "description": (
+        "Bump the plugin version, create git tag, and publish a GitHub Release. "
+        "Use this after completing a milestone or batch of tasks to cut a release."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "bump": {
+                "type": "string",
+                "enum": ["patch", "minor", "major"],
+                "description": "Semver bump type: patch (bug fixes), minor (features), major (breaking changes)",
+            },
+            "draft": {
+                "type": "boolean",
+                "description": "Create release as draft (not yet published). Default: false",
+            },
+            "notes": {
+                "type": "string",
+                "description": "Optional release notes text. If omitted, auto-generates from git log since last tag.",
+            },
+        },
+        "required": ["bump"],
+    },
+}
+
 BOARD_ADD_TASK = {
     "name": "board_add_task",
     "description": (
@@ -122,6 +149,51 @@ BOARD_ADD_TASK = {
             "status": {
                 "type": "string",
                 "description": "Initial status (default: ready)",
+            },
+        },
+        "required": ["title"],
+    },
+}
+
+BOARD_INIT = {
+    "name": "board_init",
+    "description": (
+        "Initialize a GitHub repo with canonical board labels "
+        "(inbox, ready, in-progress, needs-review, blocked, needs-info, done). "
+        "Repo is read from .tasks/config.json (board_repo key) or BOARD_REPO env var. "
+        "Idempotent — skips labels that already exist."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+    },
+}
+
+BOARD_CREATE_ISSUE = {
+    "name": "board_create_issue",
+    "description": (
+        "Create a GitHub issue in the configured repo. "
+        "The issue gets default label 'inbox'. "
+        "Use this to create new tasks directly on GitHub."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "Issue title (required)",
+            },
+            "body": {
+                "type": "string",
+                "description": "Optional issue body / description",
+            },
+            "labels": {
+                "type": "string",
+                "description": "Comma-separated labels (default: inbox)",
+            },
+            "repo": {
+                "type": "string",
+                "description": "GitHub repo as owner/repo. Defaults to BOARD_REPO env or .tasks/config.json",
             },
         },
         "required": ["title"],
