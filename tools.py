@@ -261,46 +261,35 @@ def board_create_issue(args: dict, **kwargs) -> str:
 
 
 def board_create_issue_slash(text: str, **kwargs) -> str:
-    """Parse raw text: first line → title, rest → body. Supports --repo flag."""
+    """Delegate raw text to deepseek-v4-flash worker: parse, format, create GitHub issue.
+
+    Returns instructions for the ORCHESTRATOR to create a kanban task.
+    The orchestrator agent should read this output and call kanban_create().
+    """
     raw = text.strip()
-    # Parse --repo flag
-    repo = ""
-    if raw.startswith("--repo"):
-        parts = raw.split(None, 2)
-        if len(parts) >= 2:
-            repo = parts[1]
-            raw = parts[2] if len(parts) > 2 else ""
+    if not raw:
+        return _json({"error": "empty text — paste the issue description after /board-create-issue"})
 
-    # Split into lines, strip markdown code fences
-    lines = raw.split("\n")
-    # Remove leading/trailing ``` fences
-    if lines and lines[0].strip().startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
+    # Detect repo
+    repo = _get_default_repo()
+    if not repo:
+        return _json({"error": "no repo detected — run inside a git repo or set BOARD_REPO"})
 
-    # First non-empty line = title
-    title = ""
-    body_lines = []
-    found_title = False
-    for line in lines:
-        stripped = line.strip()
-        if not found_title and stripped:
-            title = stripped
-            found_title = True
-        elif found_title:
-            body_lines.append(line)
-
-    if not title:
-        return _json({"error": "no title found in text"})
-
-    args = {"title": title}
-    if repo:
-        args["repo"] = repo
-    if body_lines:
-        args["body"] = "\n".join(body_lines).strip()
-
-    return board_create_issue(args)
+    return _json({
+        "action": "create_kanban_task",
+        "assignee": "deepseek-v4-flash",
+        "workspace": "scratch",
+        "title": "Create GitHub issue from raw text",
+        "body": f"Repo: {repo}\n\n"
+                f"Read the raw text below and create a well-formatted GitHub issue:\n"
+                f"1. Extract a concise title (first line or main topic)\n"
+                f"2. Format the body with proper markdown\n"
+                f"3. Run: gh issue create --repo {repo} --title \"...\" --body \"...\" --label inbox\n"
+                f"4. Return: {{\"number\": N, \"url\": \"...\"}}\n\n"
+                f"RAW TEXT:\n```\n{raw}\n```\n\n"
+                f"Write result to WORKSPACE/issue-result.json. End with DONE.",
+        "raw_text_length": len(raw),
+    })
 
 
 # --- /board help command (slash-only, no tool schema) ---
