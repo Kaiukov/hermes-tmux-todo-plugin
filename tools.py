@@ -117,8 +117,11 @@ def board_release(args: dict, **kwargs) -> str:
 
 def board_init(args: dict, **kwargs) -> str:
     """Initialize GitHub repo with canonical board labels."""
-    # repo is read from env/config by the bin script
-    result = _run_bin("board-init")
+    repo = args.get("repo", "")
+    cmd_args = []
+    if repo:
+        cmd_args = ["--repo", repo]
+    result = _run_bin("board-init", *cmd_args)
     return json.dumps(result)
 
 
@@ -150,8 +153,9 @@ def board_add_task_slash(text: str, **kwargs) -> str:
 
 
 def board_init_slash(text: str, **kwargs) -> str:
-    """Initialize GitHub repo with canonical board labels (reads repo from config/env)."""
-    return board_init({})
+    """Initialize GitHub repo with canonical board labels."""
+    repo = text.strip()
+    return board_init({"repo": repo} if repo else {})
 
 
 def board_release_slash(text: str, **kwargs) -> str:
